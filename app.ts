@@ -117,11 +117,14 @@ function main() {
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
                 response.end(`{"id": "${id}"}`);
+
+                console.log(`${new Date().toLocaleString()}: host id: ${id}`);
+                console.log(`${new Date().toLocaleString()}: host sdp description: ${description}`);
             } else if (url === 'host' && request.method === 'GET') {
                 const id: string = urlStruct.searchParams.get('id') || '';
                 const host = hosts[id];
                 if (!host) {
-                    throw new Error('when checking the host: empty host id');
+                    throw new Error('when checking the host: empty or unkown host id');
                 }
                 if (host.guestDescription) {
                     throw new Error(`when checking the host: host is already in a call: ${id}`);
@@ -151,6 +154,10 @@ function main() {
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
                 response.end('{}');
+
+                console.log(`${new Date().toLocaleString()}: host id: ${hostId}`);
+                console.log(`${new Date().toLocaleString()}: host sdp description: ${host.description}`);
+                console.log(`${new Date().toLocaleString()}: guest sdp description: ${host.guestDescription}`);
             } else if (url === 'guest' && request.method === 'GET') {
                 const hostId: string = urlStruct.searchParams.get('hostId') || '';
 
@@ -177,6 +184,13 @@ function main() {
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
                 response.end('{}');
+
+                for (const entry of Object.entries(hosts)) {
+                    console.log(`${new Date().toLocaleString()}: host id: ${entry[0]}`);
+                    console.log(`${new Date().toLocaleString()}: host sdp description: ${entry[1].description}`);
+                    console.log(`${new Date().toLocaleString()}: guest sdp description: ${entry[1].guestDescription}`);
+                    console.log(`${new Date().toLocaleString()}: host created at: ${entry[1].created.toLocaleString()}`);
+                }
             } else {
                 throw new Error('unhandled endpoint');
             }
@@ -192,7 +206,7 @@ function main() {
             response.statusCode = 404;
             response.setHeader('Content-Type', 'application/json');
             response.end('{"error": "that\'s an error"}');
-            console.error(`${new Date().toLocaleString()}: error: ${error}`);
+            console.error(`${new Date().toLocaleString()}: ${error}`);
         }
     });
 
