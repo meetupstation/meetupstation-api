@@ -1,0 +1,19 @@
+{
+  "name": "meetupstation-api",
+  "version": "1.0.0",
+  "description": "A dead simple WebRTC signalling handler",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meetupstation/meetupstation-api.git"
+  },
+  "author": "Tigran Ghahramanyan",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/meetupstation/meetupstation-api/issues"
+  },
+  "homepage": "https://github.com/meetupstation/meetupstation-api#readme",
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "typescript": "^5.8.3"
+  }
+}
