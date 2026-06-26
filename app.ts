@@ -99,7 +99,7 @@ function main() {
                         description: description,
                         candidates: candidate ? [candidate] : [],
                         guestDescription: '',
-                        accessKey: `${crypto.randomBytes(8).toString('hex')}`,
+                        accessKey: accessKey || `${crypto.randomBytes(8).toString('hex')}`,
                         created: new Date()
                     };
                 } else {
