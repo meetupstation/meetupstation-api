@@ -6,6 +6,7 @@ const port = 3000;
 const hosts: {
     [id: string]: {
         description: string,
+        candidates: string[],
         guestDescription: string,
         created: Date,
         accessKey: string
@@ -81,6 +82,7 @@ function main() {
                 const body: string = await getBody(request);
                 const bodyObject = JSON.parse(body);
                 const description: string = bodyObject.description || '';
+                const candidate: string = bodyObject.candidate || '';
                 let id: string = bodyObject.id;
                 const accessKey = bodyObject.accessKey;
 
@@ -95,29 +97,31 @@ function main() {
                 if (!hosts[id]) {
                     hosts[id] = {
                         description: description,
+                        candidates: candidate ? [candidate] : [],
                         guestDescription: '',
                         accessKey: `${crypto.randomBytes(8).toString('hex')}`,
                         created: new Date()
                     };
                 } else {
                     const host = hosts[id];
-                    if (!host.description) {
+                    if (description) {
                         host.description = description;
-                    } else {
-                        const storedCandidates = JSON.parse(atob(host.description));
-                        const newCandidate = JSON.parse(atob(description));
-
-                        storedCandidates.sdp += `a=${newCandidate.candidate}\r\n`;
-                        host.description = btoa(JSON.stringify(storedCandidates));
+                    } 
+                    if (candidate) {
+                        host.candidates.push(candidate);
                     }
                 }
 
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
-                response.end(`{"id": "${id}", "accessKey": "${hosts[id].accessKey}"}`);
+                response.end(JSON.stringify({
+                    id: id,
+                    accessKey: hosts[id].accessKey
+                }));
 
                 console.log(`${new Date().toLocaleString()}: host id: ${id}`);
                 console.log(`${new Date().toLocaleString()}: host sdp description: ${description}`);
+                console.log(`${new Date().toLocaleString()}: host ice candidate: ${candidate}`);
             } else if (url === 'host' && request.method === 'GET') {
                 const id: string = urlStruct.searchParams.get('id') || '';
                 const host = hosts[id];
@@ -130,7 +134,11 @@ function main() {
 
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
-                response.end(`{"id": "${id}", "description": "${host.description}"}`);
+                response.end(JSON.stringify({
+                    id: id,
+                    description: host.description,
+                    candidates: host.candidates
+                }));
             } else if (url === 'guest' && request.method === 'POST') {
                 const body: string = await getBody(request);
                 const hostId: string = JSON.parse(body).hostId || '';
@@ -170,7 +178,9 @@ function main() {
 
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
-                response.end(`{"guestDescription": "${host.guestDescription}"}`);
+                response.end(JSON.stringify({
+                    guestDescription: host.guestDescription
+                }));
 
                 if (host.guestDescription) {
                     delete hosts[hostId];
@@ -183,6 +193,9 @@ function main() {
                 for (const entry of Object.entries(hosts)) {
                     console.log(`${new Date().toLocaleString()}: host id: ${entry[0]}`);
                     console.log(`${new Date().toLocaleString()}: host sdp description: ${entry[1].description}`);
+                    for (const candidate of entry[1].candidates) {
+                        console.log(`${new Date().toLocaleString()}: host candidate:     ${candidate}`);
+                    }
                     console.log(`${new Date().toLocaleString()}: guest sdp description: ${entry[1].guestDescription}`);
                     console.log(`${new Date().toLocaleString()}: host created at: ${entry[1].created.toLocaleString()}`);
                 }
@@ -200,7 +213,9 @@ function main() {
 
             response.statusCode = 404;
             response.setHeader('Content-Type', 'application/json');
-            response.end('{"error": "that\'s an error"}');
+            response.end(JSON.stringify({
+                    error: 'that\'s an error'
+            }));
             console.error(`${new Date().toLocaleString()}: ${error}`);
         }
     });
