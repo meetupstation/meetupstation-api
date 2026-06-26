@@ -7,11 +7,9 @@ const hosts: {
     [id: string]: {
         description: string,
         guestDescription: string,
-        created: Date
+        created: Date,
+        accessKey: string
     }
-} = {};
-const hostsRev: {
-    [description: string]: string
 } = {};
 
 async function getBody(request: http.IncomingMessage): Promise<string> {
@@ -42,9 +40,7 @@ function deleteOldHosts() {
             const entry = entries[index];
 
             const hostId = entry[0];
-            const hostDescription = entry[1].description;
             delete hosts[hostId];
-            delete hostsRev[hostDescription];
         }
     } else {
         const now = new Date().getTime();
@@ -54,9 +50,7 @@ function deleteOldHosts() {
 
             if ((now - entryTime) / 1000 > 600) {
                 const hostId = entry[0];
-                const hostDescription = entry[1].description;
                 delete hosts[hostId];
-                delete hostsRev[hostDescription];
             } else {
                 break;
             }
@@ -85,38 +79,42 @@ function main() {
 
             if (url === 'host' && request.method === 'POST') {
                 const body: string = await getBody(request);
-                const description: string = JSON.parse(body).description || '';
-                let id: string = JSON.parse(body).id || (hostsRev[description] ? hostsRev[description] : '');
-
-                if (description === '') {
-                    throw new Error('when creating the host: empty description');
-                }
-
-                if (hosts[id]) {
-                    delete hostsRev[hosts[id].description];
-                    delete hosts[id];
-                }
-                if (hostsRev[description]) {
-                    delete hosts[hostsRev[description]];
-                    delete hostsRev[description];
-                }
+                const bodyObject = JSON.parse(body);
+                const description: string = bodyObject.description || '';
+                let id: string = bodyObject.id;
+                const accessKey = bodyObject.accessKey;
 
                 if (id === '') {
                     do {
                         id = `${crypto.randomBytes(4).toString('hex')} ${crypto.randomBytes(4).toString('hex')}`;
                     } while (hosts[id] !== undefined);
+                } else if (hosts[id] && accessKey != hosts[id].accessKey) {
+                    delete hosts[id];
                 }
 
-                hosts[id] = {
-                    description: description,
-                    guestDescription: '',
-                    created: new Date()
-                };
-                hostsRev[description] = id;
+                if (!hosts[id]) {
+                    hosts[id] = {
+                        description: description,
+                        guestDescription: '',
+                        accessKey: `${crypto.randomBytes(8).toString('hex')}`,
+                        created: new Date()
+                    };
+                } else {
+                    const host = hosts[id];
+                    if (!host.description) {
+                        host.description = description;
+                    } else {
+                        const storedCandidates = JSON.parse(atob(host.description));
+                        const newCandidate = JSON.parse(atob(description));
+
+                        storedCandidates.sdp += `a=${newCandidate.candidate}\r\n`;
+                        host.description = btoa(JSON.stringify(storedCandidates));
+                    }
+                }
 
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
-                response.end(`{"id": "${id}"}`);
+                response.end(`{"id": "${id}", "accessKey": "${hosts[id].accessKey}"}`);
 
                 console.log(`${new Date().toLocaleString()}: host id: ${id}`);
                 console.log(`${new Date().toLocaleString()}: host sdp description: ${description}`);
@@ -175,10 +173,7 @@ function main() {
                 response.end(`{"guestDescription": "${host.guestDescription}"}`);
 
                 if (host.guestDescription) {
-                    const description = host.description;
-
                     delete hosts[hostId];
-                    delete hostsRev[description];
                 }
             } else if (url === 'debug') {
                 response.statusCode = 200;
