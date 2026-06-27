@@ -5,11 +5,13 @@ const hostname = '127.0.0.1';
 const port = 3000;
 const hosts: {
     [id: string]: {
-        description: string,
-        candidates: string[],
+        hostDescription: string,
+        hostCandidates: string[],
         guestDescription: string,
-        created: Date,
-        accessKey: string
+        guestCandidates: string[],
+        hostAccessKey: string,
+        guestAccessKey: string,
+        created: Date
     }
 } = {};
 
@@ -90,25 +92,31 @@ function main() {
                     do {
                         id = `${crypto.randomBytes(4).toString('hex')} ${crypto.randomBytes(4).toString('hex')}`;
                     } while (hosts[id] !== undefined);
-                } else if (hosts[id] && accessKey != hosts[id].accessKey) {
+                } else if (hosts[id] && accessKey != hosts[id].hostAccessKey) {
                     delete hosts[id];
                 }
 
+                const newAccessKey = accessKey === undefined ?
+                    '' :
+                    (accessKey || `${crypto.randomBytes(8).toString('hex')}`);
+
                 if (!hosts[id]) {
                     hosts[id] = {
-                        description: description,
-                        candidates: candidate ? [candidate] : [],
+                        hostDescription: description,
+                        hostCandidates: candidate ? [candidate] : [],
                         guestDescription: '',
-                        accessKey: accessKey || `${crypto.randomBytes(8).toString('hex')}`,
+                        guestCandidates: [],
+                        hostAccessKey: newAccessKey,
+                        guestAccessKey: '',
                         created: new Date()
                     };
                 } else {
                     const host = hosts[id];
                     if (description) {
-                        host.description = description;
-                    } 
+                        host.hostDescription = description;
+                    }
                     if (candidate) {
-                        host.candidates.push(candidate);
+                        host.hostCandidates.push(candidate);
                     }
                 }
 
@@ -116,7 +124,7 @@ function main() {
                 response.setHeader('Content-Type', 'application/json');
                 response.end(JSON.stringify({
                     id: id,
-                    accessKey: hosts[id].accessKey
+                    accessKey: hosts[id].hostAccessKey
                 }));
 
                 console.log(`${new Date().toLocaleString()}: host id: ${id}`);
@@ -124,66 +132,85 @@ function main() {
                 console.log(`${new Date().toLocaleString()}: host ice candidate: ${candidate}`);
             } else if (url === 'host' && request.method === 'GET') {
                 const id: string = urlStruct.searchParams.get('id') || '';
+                const accessKey = urlStruct.searchParams.get('accessKey') || '';
+
                 const host = hosts[id];
                 if (!host) {
                     throw new Error('when checking the host: empty or unkown host id');
                 }
-                if (host.guestDescription) {
+                if (host.guestDescription || host.guestAccessKey != accessKey) {
                     throw new Error(`when checking the host: host is already in a call: ${id}`);
                 }
+
+                host.guestAccessKey = accessKey === undefined ?
+                    '' :
+                    (accessKey || `${crypto.randomBytes(8).toString('hex')}`);
 
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
                 response.end(JSON.stringify({
                     id: id,
-                    description: host.description,
-                    candidates: host.candidates
+                    description: host.hostDescription,
+                    candidates: host.hostCandidates,
+                    accessKey: host.guestAccessKey
                 }));
 
-                host.candidates = [];
+                host.hostCandidates = [];
+
             } else if (url === 'guest' && request.method === 'POST') {
                 const body: string = await getBody(request);
-                const hostId: string = JSON.parse(body).hostId || '';
-                const guestDescription: string = JSON.parse(body).guestDescription || '';
+                const bodyObject = JSON.parse(body);
+
+                const hostId: string = bodyObject.hostId || '';
+                const description: string = bodyObject.description || bodyObject.guestDescription || '';
+                const candidate: string = bodyObject.candidate || '';
+                const accessKey = bodyObject.accessKey;
 
                 if (hostId === '') {
                     throw new Error('when creating the guest: empty hostId');
                 }
-                if (guestDescription === '') {
-                    throw new Error('when creating the guest: empty guestDescription');
-                }
+
                 const host = hosts[hostId];
-                if (!host) {
+                if (!host || host.guestAccessKey != accessKey) {
                     throw new Error(`when creating the guest: host not found: ${hostId}`);
                 }
 
-                host.guestDescription = guestDescription;
+                if (description) {
+                    host.guestDescription = description;
+                }
+                if (candidate) {
+                    host.guestCandidates.push(candidate);
+                }
 
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
                 response.end('{}');
 
                 console.log(`${new Date().toLocaleString()}: host id: ${hostId}`);
-                console.log(`${new Date().toLocaleString()}: host sdp description: ${host.description}`);
-                console.log(`${new Date().toLocaleString()}: guest sdp description: ${host.guestDescription}`);
+                console.log(`${new Date().toLocaleString()}: guest sdp description: ${description}`);
+                console.log(`${new Date().toLocaleString()}: ice candidate: ${candidate}`);
             } else if (url === 'guest' && request.method === 'GET') {
                 const hostId: string = urlStruct.searchParams.get('hostId') || '';
+                const accessKey = urlStruct.searchParams.get('accessKey') || '';
 
                 if (hostId === '') {
                     throw new Error('when checking for a guest: empty hostId');
                 }
 
                 const host = hosts[hostId];
-                if (!host) {
+                if (!host || host.hostAccessKey != accessKey) {
                     throw new Error(`when checking for a guest: host not found: ${hostId}`);
                 }
 
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
                 response.end(JSON.stringify({
-                    guestDescription: host.guestDescription
+                    guestDescription: host.guestDescription,
+                    description: host.guestDescription,
+                    candidates: host.guestCandidates
                 }));
 
+                host.guestCandidates = [];
                 if (host.guestDescription) {
                     delete hosts[hostId];
                 }
@@ -194,11 +221,14 @@ function main() {
 
                 for (const entry of Object.entries(hosts)) {
                     console.log(`${new Date().toLocaleString()}: host id: ${entry[0]}`);
-                    console.log(`${new Date().toLocaleString()}: host sdp description: ${entry[1].description}`);
-                    for (const candidate of entry[1].candidates) {
+                    console.log(`${new Date().toLocaleString()}: host sdp description: ${entry[1].hostDescription}`);
+                    for (const candidate of entry[1].hostCandidates) {
                         console.log(`${new Date().toLocaleString()}: host candidate:     ${candidate}`);
                     }
                     console.log(`${new Date().toLocaleString()}: guest sdp description: ${entry[1].guestDescription}`);
+                    for (const candidate of entry[1].guestCandidates) {
+                        console.log(`${new Date().toLocaleString()}: guest candidate:     ${candidate}`);
+                    }
                     console.log(`${new Date().toLocaleString()}: host created at: ${entry[1].created.toLocaleString()}`);
                 }
             } else {
