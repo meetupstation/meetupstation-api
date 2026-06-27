@@ -158,6 +158,7 @@ function main() {
                 }));
 
                 host.hostCandidates = [];
+                host.hostDescription = '';
 
             } else if (url === 'guest' && request.method === 'POST') {
                 const body: string = await getBody(request);
