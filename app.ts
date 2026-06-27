@@ -86,17 +86,17 @@ function main() {
                 const description: string = bodyObject.description || '';
                 const candidate: string = bodyObject.candidate || '';
                 let id: string = bodyObject.id;
-                const accessKey = bodyObject.accessKey;
+                const accessKey = bodyObject.accessKey || '';
 
                 if (id === '') {
                     do {
                         id = `${crypto.randomBytes(4).toString('hex')} ${crypto.randomBytes(4).toString('hex')}`;
                     } while (hosts[id] !== undefined);
-                } else if (hosts[id] && accessKey != hosts[id].hostAccessKey) {
+                } else if (hosts[id] && accessKey !== hosts[id].hostAccessKey) {
                     delete hosts[id];
                 }
 
-                const newAccessKey = accessKey === undefined ?
+                const newAccessKey = bodyObject.accessKey === undefined ?
                     '' :
                     (accessKey || `${crypto.randomBytes(8).toString('hex')}`);
 
@@ -132,17 +132,18 @@ function main() {
                 console.log(`${new Date().toLocaleString()}: host ice candidate: ${candidate}`);
             } else if (url === 'host' && request.method === 'GET') {
                 const id: string = urlStruct.searchParams.get('id') || '';
-                const accessKey = urlStruct.searchParams.get('accessKey') || '';
+                const accessKeyInput = urlStruct.searchParams.get('accessKey');
+                const accessKey = accessKeyInput || '';
 
                 const host = hosts[id];
                 if (!host) {
                     throw new Error('when checking the host: empty or unkown host id');
                 }
-                if (host.guestDescription || host.guestAccessKey != accessKey) {
+                if (host.guestDescription || host.guestAccessKey !== accessKey) {
                     throw new Error(`when checking the host: host is already in a call: ${id}`);
                 }
 
-                host.guestAccessKey = accessKey === undefined ?
+                host.guestAccessKey = accessKeyInput === undefined ?
                     '' :
                     (accessKey || `${crypto.randomBytes(8).toString('hex')}`);
 
@@ -164,14 +165,14 @@ function main() {
                 const hostId: string = bodyObject.hostId || '';
                 const description: string = bodyObject.description || bodyObject.guestDescription || '';
                 const candidate: string = bodyObject.candidate || '';
-                const accessKey = bodyObject.accessKey;
+                const accessKey = bodyObject.accessKey || '';
 
                 if (hostId === '') {
                     throw new Error('when creating the guest: empty hostId');
                 }
 
                 const host = hosts[hostId];
-                if (!host || host.guestAccessKey != accessKey) {
+                if (!host || host.guestAccessKey !== accessKey) {
                     throw new Error(`when creating the guest: host not found: ${hostId}`);
                 }
 
@@ -198,7 +199,7 @@ function main() {
                 }
 
                 const host = hosts[hostId];
-                if (!host || host.hostAccessKey != accessKey) {
+                if (!host || host.hostAccessKey !== accessKey) {
                     throw new Error(`when checking for a guest: host not found: ${hostId}`);
                 }
 
