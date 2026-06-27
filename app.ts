@@ -132,8 +132,7 @@ function main() {
                 console.log(`${new Date().toLocaleString()}: host ice candidate: ${candidate}`);
             } else if (url === 'host' && request.method === 'GET') {
                 const id: string = urlStruct.searchParams.get('id') || '';
-                const accessKeyInput = urlStruct.searchParams.get('accessKey');
-                const accessKey = accessKeyInput || '';
+                const accessKey = urlStruct.searchParams.get('accessKey') || '';
 
                 const host = hosts[id];
                 if (!host) {
@@ -143,7 +142,7 @@ function main() {
                     throw new Error(`when checking the host: host is already in a call: ${id}`);
                 }
 
-                host.guestAccessKey = accessKeyInput === undefined ?
+                host.guestAccessKey = !urlStruct.searchParams.has('accessKey') ?
                     '' :
                     (accessKey || `${crypto.randomBytes(8).toString('hex')}`);
 
