@@ -230,6 +230,8 @@ function main() {
                     for (const candidate of entry[1].guestCandidates) {
                         console.log(`${new Date().toLocaleString()}: guest candidate:     ${candidate}`);
                     }
+                    console.log(`${new Date().toLocaleString()}: host access key: ${entry[1].hostAccessKey}`);
+                    console.log(`${new Date().toLocaleString()}: guest access key: ${entry[1].guestAccessKey}`);
                     console.log(`${new Date().toLocaleString()}: host created at: ${entry[1].created.toLocaleString()}`);
                 }
             } else {
