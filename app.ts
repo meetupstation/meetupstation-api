@@ -139,6 +139,8 @@ function main() {
                     description: host.description,
                     candidates: host.candidates
                 }));
+
+                host.candidates = [];
             } else if (url === 'guest' && request.method === 'POST') {
                 const body: string = await getBody(request);
                 const hostId: string = JSON.parse(body).hostId || '';
