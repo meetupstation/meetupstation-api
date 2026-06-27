@@ -84,7 +84,7 @@ function main() {
                 const body: string = await getBody(request);
                 const bodyObject = JSON.parse(body);
                 const description: string = bodyObject.description || '';
-                const candidate: string = bodyObject.candidate || '';
+                const candidates: string[] = bodyObject.candidates || [];
                 let id: string = bodyObject.id;
                 const accessKey = bodyObject.accessKey || '';
 
@@ -103,7 +103,7 @@ function main() {
                 if (!hosts[id]) {
                     hosts[id] = {
                         hostDescription: description,
-                        hostCandidates: candidate ? [candidate] : [],
+                        hostCandidates: candidates,
                         guestDescription: '',
                         guestCandidates: [],
                         hostAccessKey: newAccessKey,
@@ -115,7 +115,7 @@ function main() {
                     if (description) {
                         host.hostDescription = description;
                     }
-                    if (candidate) {
+                    for (const candidate of candidates) {
                         host.hostCandidates.push(candidate);
                     }
                 }
@@ -129,7 +129,9 @@ function main() {
 
                 console.log(`${new Date().toLocaleString()}: host id: ${id}`);
                 console.log(`${new Date().toLocaleString()}: host sdp description: ${description}`);
-                console.log(`${new Date().toLocaleString()}: host ice candidate: ${candidate}`);
+                for (const candidate of candidates) {
+                    console.log(`${new Date().toLocaleString()}: host ice candidate: ${candidate}`);
+                }
             } else if (url === 'host' && request.method === 'GET') {
                 const id: string = urlStruct.searchParams.get('id') || '';
                 const accessKey = urlStruct.searchParams.get('accessKey') || '';
@@ -163,7 +165,7 @@ function main() {
 
                 const hostId: string = bodyObject.hostId || '';
                 const description: string = bodyObject.description || bodyObject.guestDescription || '';
-                const candidate: string = bodyObject.candidate || '';
+                const candidates: string[] = bodyObject.candidates || [];
                 const accessKey = bodyObject.accessKey || '';
 
                 if (hostId === '') {
@@ -178,7 +180,7 @@ function main() {
                 if (description) {
                     host.guestDescription = description;
                 }
-                if (candidate) {
+                for (const candidate of candidates) {
                     host.guestCandidates.push(candidate);
                 }
 
@@ -188,7 +190,9 @@ function main() {
 
                 console.log(`${new Date().toLocaleString()}: host id: ${hostId}`);
                 console.log(`${new Date().toLocaleString()}: guest sdp description: ${description}`);
-                console.log(`${new Date().toLocaleString()}: ice candidate: ${candidate}`);
+                for (const candidate of candidates) {
+                    console.log(`${new Date().toLocaleString()}: guest ice candidate: ${candidate}`);
+                }
             } else if (url === 'guest' && request.method === 'GET') {
                 const hostId: string = urlStruct.searchParams.get('hostId') || '';
                 const accessKey = urlStruct.searchParams.get('accessKey') || '';
@@ -223,11 +227,11 @@ function main() {
                     console.log(`${new Date().toLocaleString()}: host id: ${entry[0]}`);
                     console.log(`${new Date().toLocaleString()}: host sdp description: ${entry[1].hostDescription}`);
                     for (const candidate of entry[1].hostCandidates) {
-                        console.log(`${new Date().toLocaleString()}: host candidate:     ${candidate}`);
+                        console.log(`${new Date().toLocaleString()}: host ice candidate:     ${candidate}`);
                     }
                     console.log(`${new Date().toLocaleString()}: guest sdp description: ${entry[1].guestDescription}`);
                     for (const candidate of entry[1].guestCandidates) {
-                        console.log(`${new Date().toLocaleString()}: guest candidate:     ${candidate}`);
+                        console.log(`${new Date().toLocaleString()}: guest ice candidate:     ${candidate}`);
                     }
                     console.log(`${new Date().toLocaleString()}: host access key: ${entry[1].hostAccessKey}`);
                     console.log(`${new Date().toLocaleString()}: guest access key: ${entry[1].guestAccessKey}`);
