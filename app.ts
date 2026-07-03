@@ -215,6 +215,9 @@ function main() {
                     candidates: host.guestCandidates
                 }));
 
+                if (host.guestDescription) {
+                    host.guestAccessKey = '';
+                }
                 host.guestCandidates = [];
                 host.guestDescription = '';
             } else if (url === 'debug') {
