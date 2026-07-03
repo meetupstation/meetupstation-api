@@ -92,8 +92,6 @@ function main() {
                     do {
                         id = `${crypto.randomBytes(4).toString('hex')} ${crypto.randomBytes(4).toString('hex')}`;
                     } while (hosts[id] !== undefined);
-                } else if (hosts[id] && accessKey !== hosts[id].hostAccessKey) {
-                    delete hosts[id];
                 }
 
                 const newAccessKey = bodyObject.accessKey === undefined ?
@@ -110,7 +108,7 @@ function main() {
                         guestAccessKey: '',
                         created: new Date()
                     };
-                } else {
+                } else if (hosts[id].hostAccessKey === accessKey) {
                     const host = hosts[id];
                     if (description) {
                         host.hostDescription = description;
@@ -118,6 +116,8 @@ function main() {
                     for (const candidate of candidates) {
                         host.hostCandidates.push(candidate);
                     }
+                } else {
+                    throw new Error(`when checking the host: host is already in a call: ${id}`);
                 }
 
                 response.statusCode = 200;
@@ -216,9 +216,7 @@ function main() {
                 }));
 
                 host.guestCandidates = [];
-                if (host.guestDescription) {
-                    delete hosts[hostId];
-                }
+                host.guestDescription = '';
             } else if (url === 'debug') {
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
