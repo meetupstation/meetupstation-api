@@ -11,7 +11,7 @@ const hosts: {
         guestCandidates: string[],
         hostAccessKey: string,
         guestAccessKey: string,
-        created: Date
+        updated: Date
     }
 } = {};
 
@@ -33,7 +33,7 @@ async function getBody(request: http.IncomingMessage): Promise<string> {
 function deleteOldHosts() {
     const entries = Object.entries(hosts);
 
-    entries.sort(([, a], [, b]) => a.created.getTime() - b.created.getTime());
+    entries.sort(([, a], [, b]) => a.updated.getTime() - b.updated.getTime());
 
     const maxHostsCount = 1000;
 
@@ -49,9 +49,9 @@ function deleteOldHosts() {
         const now = new Date().getTime();
 
         for (const entry of entries) {
-            const entryTime = entry[1].created.getTime();
+            const entryTime = entry[1].updated.getTime();
 
-            if ((now - entryTime) / 1000 > 600) {
+            if ((now - entryTime) / 1000 > 120) {
                 const hostId = entry[0];
                 delete hosts[hostId];
             } else {
@@ -106,7 +106,7 @@ function main() {
                         guestCandidates: [],
                         hostAccessKey: newAccessKey,
                         guestAccessKey: '',
-                        created: new Date()
+                        updated: new Date()
                     };
                 } else if (hosts[id].hostAccessKey === accessKey) {
                     const host = hosts[id];
@@ -116,6 +116,14 @@ function main() {
                     for (const candidate of candidates) {
                         host.hostCandidates.push(candidate);
                     }
+
+                    if (0 == description.length || 0 == candidates.length) {
+                        host.guestCandidates = [];
+                        host.guestDescription = '';
+                        host.guestAccessKey = '';
+                    }
+
+                    host.updated = new Date();
                 } else {
                     throw new Error(`when checking the host: host is already in a call: ${id}`);
                 }
@@ -140,7 +148,10 @@ function main() {
                 if (!host) {
                     throw new Error('when checking the host: empty or unkown host id');
                 }
-                if (host.guestDescription || host.guestAccessKey !== accessKey) {
+                if (host.guestDescription) {
+                    throw new Error(`when checking the host: logic error: ${id}`);
+                }
+                if (host.guestAccessKey !== accessKey) {
                     throw new Error(`when checking the host: host is already in a call: ${id}`);
                 }
 
@@ -165,7 +176,7 @@ function main() {
                 const bodyObject = JSON.parse(body);
 
                 const hostId: string = bodyObject.hostId || '';
-                const description: string = bodyObject.description || bodyObject.guestDescription || '';
+                const description: string = bodyObject.description || '';
                 const candidates: string[] = bodyObject.candidates || [];
                 const accessKey = bodyObject.accessKey || '';
 
@@ -174,8 +185,11 @@ function main() {
                 }
 
                 const host = hosts[hostId];
-                if (!host || host.guestAccessKey !== accessKey) {
+                if (!host) {
                     throw new Error(`when creating the guest: host not found: ${hostId}`);
+                }
+                if (host.guestAccessKey !== accessKey) {
+                    throw new Error(`when creating the guest: host is already in a call: ${hostId}`);
                 }
 
                 if (description) {
@@ -203,14 +217,17 @@ function main() {
                 }
 
                 const host = hosts[hostId];
-                if (!host || host.hostAccessKey !== accessKey) {
+                if (!host) {
                     throw new Error(`when checking for a guest: host not found: ${hostId}`);
+                }
+                if (host.hostAccessKey !== accessKey) {
+                    throw new Error(`when checking for a guest: host is already in a call: ${hostId}`);
                 }
 
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
                 response.end(JSON.stringify({
-                    guestDescription: host.guestDescription,
+                    // guestDescription: host.guestDescription,
                     description: host.guestDescription,
                     candidates: host.guestCandidates
                 }));
@@ -237,7 +254,7 @@ function main() {
                     }
                     console.log(`${new Date().toLocaleString()}: host access key: ${entry[1].hostAccessKey}`);
                     console.log(`${new Date().toLocaleString()}: guest access key: ${entry[1].guestAccessKey}`);
-                    console.log(`${new Date().toLocaleString()}: host created at: ${entry[1].created.toLocaleString()}`);
+                    console.log(`${new Date().toLocaleString()}: host updated at: ${entry[1].updated.toLocaleString()}`);
                 }
             } else {
                 throw new Error('unhandled endpoint');
