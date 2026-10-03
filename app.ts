@@ -15,17 +15,40 @@ const hosts: {
     }
 } = {};
 
-async function getBody(request: http.IncomingMessage): Promise<string> {
-    return new Promise((resolve) => {
-        const bodyParts: any[] = [];
-        let body;
-        request.on('data', (chunk) => {
-            // console.log('data');
+async function getBody(
+    request: http.IncomingMessage
+): Promise<string> {
+    const maxBodySize = 1024 * 1024;
+    return new Promise((resolve, reject) => {
+        const bodyParts: Buffer[] = [];
+        let bodySize = 0;
+        let aborted = false;
+
+        request.on('data', (chunk: Buffer) => {
+            if (aborted) return;
+
+            bodySize += chunk.length;
+
+            if (bodySize > maxBodySize) {
+                aborted = true;
+                request.destroy();
+                reject(new Error('Request body too large'));
+                return;
+            }
+
             bodyParts.push(chunk);
-        }).on('end', () => {
-            // console.log('end');
-            body = Buffer.concat(bodyParts).toString();
-            resolve(body);
+        });
+
+        request.on('end', () => {
+            if (!aborted) {
+                resolve(Buffer.concat(bodyParts).toString());
+            }
+        });
+
+        request.on('error', (err) => {
+            if (!aborted) {
+                reject(err);
+            }
         });
     });
 }
@@ -34,6 +57,19 @@ function deleteOldHosts() {
     const entries = Object.entries(hosts);
 
     entries.sort(([, a], [, b]) => a.updated.getTime() - b.updated.getTime());
+
+    const now = new Date().getTime();
+
+    for (const entry of entries) {
+        const entryTime = entry[1].updated.getTime();
+
+        if ((now - entryTime) / 1000 > 120) {
+            const hostId = entry[0];
+            delete hosts[hostId];
+        } else {
+            break;
+        }
+    }
 
     const maxHostsCount = 1000;
 
@@ -44,19 +80,6 @@ function deleteOldHosts() {
 
             const hostId = entry[0];
             delete hosts[hostId];
-        }
-    } else {
-        const now = new Date().getTime();
-
-        for (const entry of entries) {
-            const entryTime = entry[1].updated.getTime();
-
-            if ((now - entryTime) / 1000 > 120) {
-                const hostId = entry[0];
-                delete hosts[hostId];
-            } else {
-                break;
-            }
         }
     }
 
@@ -85,7 +108,7 @@ function main() {
                 const bodyObject = JSON.parse(body);
                 const description: string = bodyObject.description || '';
                 const candidates: string[] = bodyObject.candidates || [];
-                let id: string = bodyObject.id;
+                let id: string = bodyObject.id || '';
                 const accessKey = bodyObject.accessKey || '';
 
                 if (id === '') {
@@ -117,7 +140,7 @@ function main() {
                         host.hostCandidates.push(candidate);
                     }
 
-                    if (0 == description.length || 0 == candidates.length) {
+                    if (0 == description.length && 0 == candidates.length) {
                         host.guestCandidates = [];
                         host.guestDescription = '';
                         host.guestAccessKey = '';
@@ -227,7 +250,6 @@ function main() {
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
                 response.end(JSON.stringify({
-                    // guestDescription: host.guestDescription,
                     description: host.guestDescription,
                     candidates: host.guestCandidates
                 }));
