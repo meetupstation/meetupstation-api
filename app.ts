@@ -58,29 +58,21 @@ function deleteOldHosts() {
 
     entries.sort(([, a], [, b]) => a.updated.getTime() - b.updated.getTime());
 
+    const maxHostsCount = 1000;
+    const maxAge = 120 * 1000;
     const now = new Date().getTime();
 
-    for (const entry of entries) {
+    for (let index = 0; index < entries.length; index++) {
+        const entry = entries[index];
         const entryTime = entry[1].updated.getTime();
-
-        if ((now - entryTime) / 1000 > 120) {
-            const hostId = entry[0];
-            delete hosts[hostId];
-        } else {
+        if (index >= entries.length - maxHostsCount &&
+            now - entryTime <= maxAge
+        ) {
             break;
         }
-    }
 
-    const maxHostsCount = 1000;
-
-    if (entries.length > maxHostsCount) {
-        const excess = entries.length - maxHostsCount;
-        for (let index = 0; index < excess; index++) {
-            const entry = entries[index];
-
-            const hostId = entry[0];
-            delete hosts[hostId];
-        }
+        const hostId = entry[0];
+        delete hosts[hostId];
     }
 
     const hostsCount = Object.keys(hosts).length;
