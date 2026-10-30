@@ -1,8 +1,12 @@
 import http from 'http';
 import crypto from 'crypto';
+import fs from 'fs/promises';
 
-const hostname = '127.0.0.1';
-const port = 3000;
+const hostname = process.env.HOST || '127.0.0.1';
+const port = Number(process.env.PORT) || 3000;
+const users_file = process.env.USERS_FILE || './users.json';
+const coturn_secret = process.env.COTURN_SECRET || '';
+
 const hosts: {
     [id: string]: {
         hostDescription: string,
@@ -14,6 +18,89 @@ const hosts: {
         updated: Date
     }
 } = {};
+
+function coturnCredentials(user: string, ok: boolean) {
+    if (!ok) {
+        return {
+            username: 'username',
+            credential: 'willnotwork'
+        }
+    }
+
+    const expiry = Math.floor(Date.now() / 1000) + 600;
+    const username = `${expiry}:${user}`;
+    const credential = crypto
+        .createHmac('sha1', coturn_secret)
+        .update(username)
+        .digest('base64');
+    return {
+        username: username,
+        credential: credential
+    };
+}
+
+function encodedStorage(user: string, ok: boolean) {
+    const userCredential = coturnCredentials(user, ok);
+    const iceServers = (ok: boolean) => {
+        if (ok) {
+            return [
+                { urls: ['stun:u.matrix.am:3478'] },
+                {
+                    urls: ['turns:u.matrix.am:3478?transport=udp'],
+                    username: userCredential.username,
+                    credential: userCredential.credential
+                }
+            ];
+        } else {
+            return [];
+        }
+    };
+
+    const storage = {
+        rooms: [],
+        rtcConfiguration: {
+            iceServers: iceServers(ok),
+            iceTransportPolicy: 'all'
+        },
+        signalServer: ''
+    };
+    return Buffer.from(JSON.stringify(storage)).toString('base64url');
+}
+
+function sha256(text: string) {
+    return crypto.createHash('sha256').update(text).digest();
+}
+
+function passwordMatches(users: any, username: string, password: string) {
+    const known = Object.hasOwn(users, username) && typeof users[username] === 'string';
+    const expected = known ? users[username] : '';
+    const equal = crypto.timingSafeEqual(sha256(expected), sha256(password));
+    return known && equal;
+}
+
+function loginPage(message = '') {
+    // action="login" is relative, so it posts back to the same prefix
+    // ("/v3/api/login" -> "/v3/api/login") whatever the proxy path is
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meetup Station login</title>
+</head>
+<body>
+    <form method="post" action="login">
+        <p>${message}</p>
+        <p><input type="text" name="username" placeholder="username"
+            autocomplete="username" autofocus required></p>
+        <p><input type="password" name="password" placeholder="password"
+            autocomplete="current-password" required></p>
+        <p><button type="submit">Log in</button></p>
+    </form>
+</body>
+</html>
+`;
+}
 
 async function getBody(
     request: http.IncomingMessage
@@ -251,6 +338,28 @@ function main() {
                 }
                 host.guestCandidates = [];
                 host.guestDescription = '';
+            } else if (url === 'login' && request.method === 'GET') {
+                response.statusCode = 200;
+                response.setHeader('Content-Type', 'text/html; charset=utf-8');
+                response.end(loginPage());
+            } else if (url === 'login' && request.method === 'POST') {
+                const form = new URLSearchParams(await getBody(request));
+                const username = form.get('username') ?? '';
+                const password = form.get('password') ?? '';
+
+                const users = JSON.parse(await fs.readFile(users_file, 'utf8'));
+
+                const target = new URL('https://meetupstation');
+                target.pathname = 'v3';
+                target.searchParams.set('storage', encodedStorage(username, passwordMatches(users, username, password)));
+            
+                response.writeHead(303, {
+                    Location: target.href,
+                    'Cache-Control': 'no-store',
+                    'Referrer-Policy': 'no-referrer',
+                    'Content-Length': 0
+                });
+                response.end();
             } else if (url === 'debug') {
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
