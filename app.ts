@@ -352,7 +352,7 @@ function main() {
                 const target = new URL(request.url || '/', 'http://host');
                 const pathParts = target.pathname.split('/').filter(Boolean);
 
-                pathParts.splice(-2, 2, 'storage');
+                pathParts.splice(-2, 2);
 
                 target.pathname = '/' + pathParts.join('/');
                 target.search = '';
