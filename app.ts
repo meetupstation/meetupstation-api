@@ -349,12 +349,20 @@ function main() {
 
                 const users = JSON.parse(await fs.readFile(users_file, 'utf8'));
 
-                const target = new URL('https://meetupstation');
-                target.pathname = 'v3';
-                target.searchParams.set('storage', encodedStorage(username, passwordMatches(users, username, password)));
+                const target = new URL(request.url || '/', 'http://host');
+                const pathParts = target.pathname.split('/').filter(Boolean);
+
+                pathParts.splice(-2, 2, 'storage');
+
+                target.pathname = '/' + pathParts.join('/');
+                target.search = '';
+                target.searchParams.set(
+                    'storage',
+                    encodedStorage(username, passwordMatches(users, username, password))
+                );
             
                 response.writeHead(303, {
-                    Location: target.href,
+                    Location: target.pathname + target.search,
                     'Cache-Control': 'no-store',
                     'Referrer-Policy': 'no-referrer',
                     'Content-Length': 0
