@@ -46,7 +46,10 @@ function encodedStorage(user: string, ok: boolean) {
             return [
                 { urls: ['stun:u.matrix.am:3478'] },
                 {
-                    urls: ['turns:u.matrix.am:3478?transport=udp'],
+                    urls: [
+                        'turns:u.matrix.am:3478?transport=udp',
+                        'turns:u.matrix.am:3478?transport=tcp'
+                    ],
                     username: userCredential.username,
                     credential: userCredential.credential
                 }
