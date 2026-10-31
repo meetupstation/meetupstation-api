@@ -44,7 +44,6 @@ function encodedStorage(user: string, ok: boolean) {
     const iceServers = (ok: boolean) => {
         if (ok) {
             return [
-                { urls: ['stun:u.matrix.am:3478'] },
                 {
                     urls: [
                         'turns:u.matrix.am:3478?transport=udp',
@@ -63,7 +62,7 @@ function encodedStorage(user: string, ok: boolean) {
         rooms: [],
         rtcConfiguration: {
             iceServers: iceServers(ok),
-            iceTransportPolicy: 'all'
+            iceTransportPolicy: 'relay'
         },
         signalServer: ''
     };
