@@ -1,0 +1,9 @@
+{
+    "demo":
+    {
+        "password": "demo",
+        "turnSecret": "demo",
+        "turnServer": "demo.net",
+        "duration": 600
+    }
+}
