@@ -5,7 +5,6 @@ import fs from 'fs/promises';
 const hostname = process.env.HOST || '127.0.0.1';
 const port = Number(process.env.PORT) || 3000;
 const users_file = process.env.USERS_FILE || './users.json';
-const coturn_secret = process.env.COTURN_SECRET || '';
 
 const hosts: {
     [id: string]: {
@@ -19,18 +18,25 @@ const hosts: {
     }
 } = {};
 
-function coturnCredentials(user: string, ok: boolean) {
-    if (!ok) {
+function coturnCredentials(user: string,
+    passwordCheck: {
+        match: boolean
+        name: string,
+        turnSecret: string,
+        turnServer: string,
+        duration: number
+    }) {
+    if (!passwordCheck.match) {
         return {
             username: 'username',
             credential: 'willnotwork'
         }
     }
 
-    const expiry = Math.floor(Date.now() / 1000) + 600;
+    const expiry = Math.floor(Date.now() / 1000) + passwordCheck.duration;
     const username = `${expiry}:${user}`;
     const credential = crypto
-        .createHmac('sha1', coturn_secret)
+        .createHmac('sha1', passwordCheck.turnSecret)
         .update(username)
         .digest('base64');
     return {
@@ -39,15 +45,22 @@ function coturnCredentials(user: string, ok: boolean) {
     };
 }
 
-function encodedStorage(user: string, ok: boolean) {
-    const userCredential = coturnCredentials(user, ok);
+function encodedStorage(user: string,
+    passwordCheck: {
+        match: boolean
+        name: string,
+        turnSecret: string,
+        turnServer: string,
+        duration: number
+    }) {
+    const userCredential = coturnCredentials(user, passwordCheck);
     const iceServers = (ok: boolean) => {
         if (ok) {
             return [
                 {
                     urls: [
-                        'turns:u.matrix.am:3478?transport=udp',
-                        'turns:u.matrix.am:3478?transport=tcp'
+                        `turns:${passwordCheck.turnServer}:3478?transport=udp`,
+                        `turns:${passwordCheck.turnServer}:3478?transport=tcp`
                     ],
                     username: userCredential.username,
                     credential: userCredential.credential
@@ -61,8 +74,8 @@ function encodedStorage(user: string, ok: boolean) {
     const storage = {
         rooms: [],
         rtcConfiguration: {
-            iceServers: iceServers(ok),
-            iceTransportPolicy: 'relay'
+            iceServers: iceServers(passwordCheck.match),
+            iceTransportPolicy: passwordCheck.match ? 'relay' : 'all'
         },
         signalServer: ''
     };
@@ -73,11 +86,41 @@ function sha256(text: string) {
     return crypto.createHash('sha256').update(text).digest();
 }
 
-function passwordMatches(users: any, username: string, password: string) {
-    const known = Object.hasOwn(users, username) && typeof users[username] === 'string';
-    const expected = known ? users[username] : '';
+function passwordMatches(
+    users: {
+        [name: string]: {
+            password: string,
+            turnSecret: string,
+            turnServer: string,
+            duration: number
+        }
+    },
+    username: string,
+    password: string): {
+        match: boolean,
+        name: string,
+        turnSecret: string,
+        turnServer: string,
+        duration: number
+    }{
+    const known = Object.hasOwn(users, username) &&
+        typeof users[username] === 'object' &&
+        typeof users[username].password === 'string' &&
+        typeof users[username].turnSecret === 'string' &&
+        typeof users[username].turnServer === 'string' &&
+        typeof users[username].duration === 'number' &&
+        Number.isSafeInteger(users[username].duration) &&
+        users[username].duration > 0;
+
+    const expected = known ? users[username].password || '' : '';
     const equal = crypto.timingSafeEqual(sha256(expected), sha256(password));
-    return known && equal;
+    return {
+        match: known && equal,
+        name: username,
+        turnSecret: known ? users[username].turnSecret || '' : '',
+        turnServer: known ? users[username].turnServer || '' : '',
+        duration: known ? users[username].duration || 0 : 0
+    };
 }
 
 function loginPage(message = '') {
@@ -358,9 +401,10 @@ function main() {
 
                 target.pathname = '/' + pathParts.join('/');
                 target.search = '';
+                const passwordCheck = passwordMatches(users, username, password);
                 target.searchParams.set(
                     'storage',
-                    encodedStorage(username, passwordMatches(users, username, password))
+                    encodedStorage(username, passwordCheck)
                 );
             
                 response.writeHead(303, {
