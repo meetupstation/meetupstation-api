@@ -2,8 +2,14 @@
     "demo":
     {
         "password": "demo",
-        "turnSecret": "demo",
-        "turnServer": "demo.net",
-        "duration": 600
+        "iceServers": [{
+            "turnSecret": "demo",
+            "duration": 600,
+            "urls": [
+                "turns:demo.net:3478?transport=udp",
+                "turns:demo.net:3478?transport=tcp"
+            ]
+        }],
+        "iceTransportPolicy": "relay"
     }
 }

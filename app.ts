@@ -18,109 +18,84 @@ const hosts: {
     }
 } = {};
 
-function coturnCredentials(user: string,
-    passwordCheck: {
-        match: boolean
-        name: string,
-        turnSecret: string,
-        turnServer: string,
-        duration: number
-    }) {
-    if (!passwordCheck.match) {
-        return {
-            username: 'username',
-            credential: 'willnotwork'
+async function encodedStorage(
+    users: {
+        [name: string]: {
+            password: string,
+            iceServers: {
+                turnSecret: string,
+                duration: number,
+                urls: string[]
+            }[],
+            iceTransportPolicy: string
+        }
+    },
+    username: string,
+    password: string): Promise<string> {
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    const iceServers: {
+        urls: string[],
+        username: string,
+        credential: string
+    }[] = [];
+    let iceTransportPolicy = 'all';
+
+    if (Object.hasOwn(users, username) &&
+        typeof users[username] === 'object' &&
+        users[username] !== null &&
+        typeof users[username].password === 'string' &&
+        Array.isArray(users[username].iceServers) &&
+        users[username].password !== '' &&
+        users[username].password === password &&
+        typeof users[username].iceTransportPolicy === 'string' &&
+        users[username].iceTransportPolicy !== '') {
+
+        iceTransportPolicy = users[username].iceTransportPolicy;
+
+        for (const iceServer of users[username].iceServers) {
+            if (typeof iceServer.turnSecret === 'string' &&
+                iceServer.turnSecret !== '' &&
+                typeof iceServer.duration === 'number' &&
+                Number.isSafeInteger(iceServer.duration) &&
+                iceServer.duration > 0) {
+                let urlsAreCorrect = Array.isArray(iceServer.urls) && iceServer.urls.length > 0;
+                if (urlsAreCorrect) {
+                    for (const url of iceServer.urls) {
+                        if (typeof url !== 'string' ||
+                            url === '') {
+                            urlsAreCorrect = false;
+                            break;
+                        }
+                    }
+                }
+                if (urlsAreCorrect) {
+                    const expiry = Math.floor(Date.now() / 1000) + iceServer.duration;
+                    const iceusername = `${expiry}:${username}`;
+                    const credential = crypto
+                        .createHmac('sha1', iceServer.turnSecret)
+                        .update(iceusername)
+                        .digest('base64');
+
+                    iceServers.push({
+                        urls: iceServer.urls,
+                        username: iceusername,
+                        credential: credential
+                    });
+                }
+            }
         }
     }
-
-    const expiry = Math.floor(Date.now() / 1000) + passwordCheck.duration;
-    const username = `${expiry}:${user}`;
-    const credential = crypto
-        .createHmac('sha1', passwordCheck.turnSecret)
-        .update(username)
-        .digest('base64');
-    return {
-        username: username,
-        credential: credential
-    };
-}
-
-function encodedStorage(user: string,
-    passwordCheck: {
-        match: boolean
-        name: string,
-        turnSecret: string,
-        turnServer: string,
-        duration: number
-    }) {
-    const userCredential = coturnCredentials(user, passwordCheck);
-    const iceServers = (ok: boolean) => {
-        if (ok) {
-            return [
-                {
-                    urls: [
-                        `turns:${passwordCheck.turnServer}:3478?transport=udp`,
-                        `turns:${passwordCheck.turnServer}:3478?transport=tcp`
-                    ],
-                    username: userCredential.username,
-                    credential: userCredential.credential
-                }
-            ];
-        } else {
-            return [];
-        }
-    };
 
     const storage = {
         rooms: [],
         rtcConfiguration: {
-            iceServers: iceServers(passwordCheck.match),
-            iceTransportPolicy: passwordCheck.match ? 'relay' : 'all'
+            iceServers: iceServers,
+            iceTransportPolicy: iceTransportPolicy
         },
         signalServer: ''
     };
     return Buffer.from(JSON.stringify(storage)).toString('base64url');
-}
-
-function sha256(text: string) {
-    return crypto.createHash('sha256').update(text).digest();
-}
-
-function passwordMatches(
-    users: {
-        [name: string]: {
-            password: string,
-            turnSecret: string,
-            turnServer: string,
-            duration: number
-        }
-    },
-    username: string,
-    password: string): {
-        match: boolean,
-        name: string,
-        turnSecret: string,
-        turnServer: string,
-        duration: number
-    }{
-    const known = Object.hasOwn(users, username) &&
-        typeof users[username] === 'object' &&
-        typeof users[username].password === 'string' &&
-        typeof users[username].turnSecret === 'string' &&
-        typeof users[username].turnServer === 'string' &&
-        typeof users[username].duration === 'number' &&
-        Number.isSafeInteger(users[username].duration) &&
-        users[username].duration > 0;
-
-    const expected = known ? users[username].password || '' : '';
-    const equal = crypto.timingSafeEqual(sha256(expected), sha256(password));
-    return {
-        match: known && equal,
-        name: username,
-        turnSecret: known ? users[username].turnSecret || '' : '',
-        turnServer: known ? users[username].turnServer || '' : '',
-        duration: known ? users[username].duration || 0 : 0
-    };
 }
 
 function loginPage(message = '') {
@@ -131,7 +106,7 @@ function loginPage(message = '') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meetup Station login</title>
+    <title>Meetup Station Login</title>
 </head>
 <body>
     <form method="post" action="login">
@@ -401,12 +376,11 @@ function main() {
 
                 target.pathname = '/' + pathParts.join('/');
                 target.search = '';
-                const passwordCheck = passwordMatches(users, username, password);
                 target.searchParams.set(
                     'storage',
-                    encodedStorage(username, passwordCheck)
+                    await encodedStorage(users, username, password)
                 );
-            
+
                 response.writeHead(303, {
                     Location: target.pathname + target.search,
                     'Cache-Control': 'no-store',
@@ -448,7 +422,7 @@ function main() {
             response.statusCode = 404;
             response.setHeader('Content-Type', 'application/json');
             response.end(JSON.stringify({
-                    error: 'that\'s an error'
+                error: 'that\'s an error'
             }));
             console.error(`${new Date().toLocaleString()}: ${error}`);
         }
