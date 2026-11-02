@@ -6,7 +6,7 @@ const hostname = process.env.HOST || '127.0.0.1';
 const port = Number(process.env.PORT) || 3000;
 const users_file = process.env.USERS_FILE || './users.json';
 
-const hosts: {
+const rooms: {
     [id: string]: {
         hostDescription: string,
         hostCandidates: string[],
@@ -16,7 +16,7 @@ const hosts: {
         guestAccessKey: string,
         updated: Date
     }
-} = {};
+} = Object.create(null);
 
 async function encodedStorage(
     users: {
@@ -160,31 +160,31 @@ async function getBody(
     });
 }
 
-function deleteOldHosts() {
-    const entries = Object.entries(hosts);
+function deleteOldRooms() {
+    const entries = Object.entries(rooms);
 
     entries.sort(([, a], [, b]) => a.updated.getTime() - b.updated.getTime());
 
-    const maxHostsCount = 1000;
+    const maxRoomsCount = 1000;
     const maxAge = 120 * 1000;
     const now = new Date().getTime();
 
     for (let index = 0; index < entries.length; index++) {
         const entry = entries[index];
         const entryTime = entry[1].updated.getTime();
-        if (index >= entries.length - maxHostsCount &&
+        if (index >= entries.length - maxRoomsCount &&
             now - entryTime <= maxAge
         ) {
             break;
         }
 
         const hostId = entry[0];
-        delete hosts[hostId];
+        delete rooms[hostId];
     }
 
-    const hostsCount = Object.keys(hosts).length;
-    if (entries.length !== hostsCount) {
-        console.log(`${new Date().toLocaleString()}: freed up hosts from ${entries.length} to ${hostsCount}`);
+    const roomsCount = Object.keys(rooms).length;
+    if (entries.length !== roomsCount) {
+        console.log(`${new Date().toLocaleString()}: freed up rooms from ${entries.length} to ${roomsCount}`);
     }
 }
 
@@ -192,7 +192,7 @@ function main() {
     const server = http.createServer(async (request, response) => {
         let urlStruct: URL | null = null;
         try {
-            deleteOldHosts();
+            deleteOldRooms();
 
             const fullUrl = 'http://host' + decodeURI(request.url || '');
             urlStruct = URL.parse(fullUrl);
@@ -204,24 +204,58 @@ function main() {
 
             if (url === 'host' && request.method === 'POST') {
                 const body: string = await getBody(request);
-                const bodyObject = JSON.parse(body);
-                const description: string = bodyObject.description || '';
-                const candidates: string[] = bodyObject.candidates || [];
-                let id: string = bodyObject.id || '';
+                const bodyObjectTemp = JSON.parse(body);
+                if (bodyObjectTemp &&
+                    bodyObjectTemp.candidates === undefined) {
+                    bodyObjectTemp.candidates = [];
+                }
+                const bodyObject: {
+                    id: string,
+                    description: string,
+                    candidates: string[],
+                    accessKey: string|undefined
+                } = bodyObjectTemp;
+
+                if (typeof bodyObject !== 'object' ||
+                    bodyObject === null ||
+                    typeof bodyObject.id !== 'string' ||
+                    typeof bodyObject.description !== 'string' ||
+                    Array.isArray(bodyObject.candidates) === false ||
+                    (
+                        typeof bodyObject.accessKey !== 'string' &&
+                        bodyObject.accessKey !== undefined
+                    )
+                ) {
+                    throw new Error('malformed input');
+                }
+
+                const description: string = bodyObject.description;
+                const candidates: string[] = (() => {
+                    const candidates = [];
+                    for (const candidate of bodyObject.candidates) {
+                        if (typeof candidate === 'string' &&
+                            candidate
+                        ) {
+                            candidates.push(candidate);
+                        }
+                    }
+                    return candidates;
+                })();
+                let id: string = bodyObject.id;
                 const accessKey = bodyObject.accessKey || '';
 
                 if (id === '') {
                     do {
                         id = `${crypto.randomBytes(4).toString('hex')} ${crypto.randomBytes(4).toString('hex')}`;
-                    } while (hosts[id] !== undefined);
+                    } while (rooms[id] !== undefined);
                 }
 
                 const newAccessKey = bodyObject.accessKey === undefined ?
                     '' :
                     (accessKey || `${crypto.randomBytes(8).toString('hex')}`);
 
-                if (!hosts[id]) {
-                    hosts[id] = {
+                if (!rooms[id]) {
+                    rooms[id] = {
                         hostDescription: description,
                         hostCandidates: candidates,
                         guestDescription: '',
@@ -230,34 +264,34 @@ function main() {
                         guestAccessKey: '',
                         updated: new Date()
                     };
-                } else if (hosts[id].hostAccessKey === accessKey) {
-                    const host = hosts[id];
+                } else if (rooms[id].hostAccessKey === accessKey) {
+                    const room = rooms[id];
                     if (description) {
-                        host.hostDescription = description;
+                        room.hostDescription = description;
                     }
                     for (const candidate of candidates) {
-                        host.hostCandidates.push(candidate);
+                        room.hostCandidates.push(candidate);
                     }
 
                     if (0 == description.length && 0 == candidates.length) {
-                        host.guestCandidates = [];
-                        host.guestDescription = '';
-                        host.guestAccessKey = '';
+                        room.guestCandidates = [];
+                        room.guestDescription = '';
+                        room.guestAccessKey = '';
                     }
 
-                    host.updated = new Date();
+                    room.updated = new Date();
                 } else {
-                    throw new Error(`when checking the host: host is already in a call: ${id}`);
+                    throw new Error(`when posting the host: room is already being negotiated at the moment: ${id}`);
                 }
 
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
                 response.end(JSON.stringify({
                     id: id,
-                    accessKey: hosts[id].hostAccessKey
+                    accessKey: rooms[id].hostAccessKey
                 }));
 
-                console.log(`${new Date().toLocaleString()}: host id: ${id}`);
+                console.log(`${new Date().toLocaleString()}: room id: ${id}`);
                 console.log(`${new Date().toLocaleString()}: host sdp description: ${description}`);
                 for (const candidate of candidates) {
                     console.log(`${new Date().toLocaleString()}: host ice candidate: ${candidate}`);
@@ -266,18 +300,18 @@ function main() {
                 const id: string = urlStruct.searchParams.get('id') || '';
                 const accessKey = urlStruct.searchParams.get('accessKey') || '';
 
-                const host = hosts[id];
-                if (!host) {
-                    throw new Error('when checking the host: empty or unkown host id');
+                const room = rooms[id];
+                if (!room) {
+                    throw new Error('when getting the host: empty or unkown room id');
                 }
-                if (host.guestDescription) {
-                    throw new Error(`when checking the host: logic error: ${id}`);
+                if (room.guestDescription) {
+                    throw new Error(`when getting the host: logic error: ${id}`);
                 }
-                if (host.guestAccessKey !== accessKey) {
-                    throw new Error(`when checking the host: host is already in a call: ${id}`);
+                if (room.guestAccessKey !== accessKey) {
+                    throw new Error(`when getting the host: room is already being negotiated at the moment: ${id}`);
                 }
 
-                host.guestAccessKey = !urlStruct.searchParams.has('accessKey') ?
+                room.guestAccessKey = !urlStruct.searchParams.has('accessKey') ?
                     '' :
                     (accessKey || `${crypto.randomBytes(8).toString('hex')}`);
 
@@ -285,79 +319,114 @@ function main() {
                 response.setHeader('Content-Type', 'application/json');
                 response.end(JSON.stringify({
                     id: id,
-                    description: host.hostDescription,
-                    candidates: host.hostCandidates,
-                    accessKey: host.guestAccessKey
+                    description: room.hostDescription,
+                    candidates: room.hostCandidates,
+                    accessKey: room.guestAccessKey
                 }));
 
-                host.hostCandidates = [];
-                host.hostDescription = '';
-
+                room.hostCandidates = [];
+                room.hostDescription = '';
             } else if (url === 'guest' && request.method === 'POST') {
                 const body: string = await getBody(request);
-                const bodyObject = JSON.parse(body);
+                const bodyObjectTemp = JSON.parse(body);
+                if (bodyObjectTemp &&
+                    bodyObjectTemp.hostId &&
+                    !bodyObjectTemp.id) {
+                    bodyObjectTemp.id = bodyObjectTemp.hostId;
+                }
+                if (bodyObjectTemp &&
+                    bodyObjectTemp.candidates === undefined) {
+                    bodyObjectTemp.candidates = [];
+                }
+                const bodyObject: {
+                    id: string,
+                    description: string,
+                    candidates: string[],
+                    accessKey: string|undefined
+                } = bodyObjectTemp;
 
-                const hostId: string = bodyObject.hostId || '';
-                const description: string = bodyObject.description || '';
-                const candidates: string[] = bodyObject.candidates || [];
+                if (typeof bodyObject !== 'object' ||
+                    bodyObject === null ||
+                    typeof bodyObject.id !== 'string' ||
+                    typeof bodyObject.description !== 'string' ||
+                    Array.isArray(bodyObject.candidates) === false ||
+                    (
+                        typeof bodyObject.accessKey !== 'string' &&
+                        bodyObject.accessKey !== undefined
+                    )
+                ) {
+                    throw new Error('malformed input');
+                }
+
+                const id: string = bodyObject.id;
+                const description: string = bodyObject.description;
+                const candidates: string[] = (() => {
+                    const candidates = [];
+                    for (const candidate of bodyObject.candidates) {
+                        if (typeof candidate === 'string' &&
+                            candidate
+                        ) {
+                            candidates.push(candidate);
+                        }
+                    }
+                    return candidates;
+                })();
                 const accessKey = bodyObject.accessKey || '';
 
-                if (hostId === '') {
-                    throw new Error('when creating the guest: empty hostId');
+                if (id === '') {
+                    throw new Error('when posting the guest: empty room id');
                 }
 
-                const host = hosts[hostId];
-                if (!host) {
-                    throw new Error(`when creating the guest: host not found: ${hostId}`);
+                const room = rooms[id];
+                if (!room) {
+                    throw new Error(`when posting the guest: room not found: ${id}`);
                 }
-                if (host.guestAccessKey !== accessKey) {
-                    throw new Error(`when creating the guest: host is already in a call: ${hostId}`);
+                if (room.guestAccessKey !== accessKey) {
+                    throw new Error(`when creating the guest: room is already being negotiated at the moment: ${id}`);
                 }
 
                 if (description) {
-                    host.guestDescription = description;
+                    room.guestDescription = description;
                 }
                 for (const candidate of candidates) {
-                    host.guestCandidates.push(candidate);
+                    room.guestCandidates.push(candidate);
                 }
 
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
                 response.end('{}');
 
-                console.log(`${new Date().toLocaleString()}: host id: ${hostId}`);
+                console.log(`${new Date().toLocaleString()}: room id: ${id}`);
                 console.log(`${new Date().toLocaleString()}: guest sdp description: ${description}`);
                 for (const candidate of candidates) {
                     console.log(`${new Date().toLocaleString()}: guest ice candidate: ${candidate}`);
                 }
             } else if (url === 'guest' && request.method === 'GET') {
                 const hostId: string = urlStruct.searchParams.get('hostId') || '';
+                const id: string = urlStruct.searchParams.get('id') || hostId;
                 const accessKey = urlStruct.searchParams.get('accessKey') || '';
 
-                if (hostId === '') {
-                    throw new Error('when checking for a guest: empty hostId');
+                if (id === '') {
+                    throw new Error('when getting the guest: empty room id');
                 }
 
-                const host = hosts[hostId];
-                if (!host) {
-                    throw new Error(`when checking for a guest: host not found: ${hostId}`);
+                const room = rooms[id];
+                if (!room) {
+                    throw new Error(`when getting the guest: room not found: ${id}`);
                 }
-                if (host.hostAccessKey !== accessKey) {
-                    throw new Error(`when checking for a guest: host is already in a call: ${hostId}`);
+                if (room.hostAccessKey !== accessKey) {
+                    throw new Error(`when getting the guest: room is already being negotiated at the moment: ${id}`);
                 }
 
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'application/json');
                 response.end(JSON.stringify({
-                    description: host.guestDescription,
-                    candidates: host.guestCandidates
+                    description: room.guestDescription,
+                    candidates: room.guestCandidates
                 }));
 
-                if (host.guestDescription) {
-                    host.guestAccessKey = '';
-                }
-                host.guestCandidates = [];
-                host.guestDescription = '';
+                room.guestCandidates = [];
+                room.guestDescription = '';
             } else if (url === 'login' && request.method === 'GET') {
                 response.statusCode = 200;
                 response.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -393,8 +462,8 @@ function main() {
                 response.setHeader('Content-Type', 'application/json');
                 response.end('{}');
 
-                for (const entry of Object.entries(hosts)) {
-                    console.log(`${new Date().toLocaleString()}: host id: ${entry[0]}`);
+                for (const entry of Object.entries(rooms)) {
+                    console.log(`${new Date().toLocaleString()}: room id: ${entry[0]}`);
                     console.log(`${new Date().toLocaleString()}: host sdp description: ${entry[1].hostDescription}`);
                     for (const candidate of entry[1].hostCandidates) {
                         console.log(`${new Date().toLocaleString()}: host ice candidate:     ${candidate}`);
@@ -405,7 +474,7 @@ function main() {
                     }
                     console.log(`${new Date().toLocaleString()}: host access key: ${entry[1].hostAccessKey}`);
                     console.log(`${new Date().toLocaleString()}: guest access key: ${entry[1].guestAccessKey}`);
-                    console.log(`${new Date().toLocaleString()}: host updated at: ${entry[1].updated.toLocaleString()}`);
+                    console.log(`${new Date().toLocaleString()}: room updated at: ${entry[1].updated.toLocaleString()}`);
                 }
             } else {
                 throw new Error('unhandled endpoint');
