@@ -304,9 +304,6 @@ function main() {
                 if (!room) {
                     throw new Error('when getting the host: empty or unkown room id');
                 }
-                if (room.guestDescription) {
-                    throw new Error(`when getting the host: logic error: ${id}`);
-                }
                 if (room.guestAccessKey !== accessKey) {
                     throw new Error(`when getting the host: room is already being negotiated at the moment: ${id}`);
                 }
