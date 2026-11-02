@@ -379,7 +379,7 @@ function main() {
                     throw new Error(`when posting the guest: room not found: ${id}`);
                 }
                 if (room.guestAccessKey !== accessKey) {
-                    throw new Error(`when creating the guest: room is already being negotiated at the moment: ${id}`);
+                    throw new Error(`when posting the guest: room is already being negotiated at the moment: ${id}`);
                 }
 
                 if (description) {
